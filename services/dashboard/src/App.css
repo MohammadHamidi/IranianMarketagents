@@ -1,0 +1,61 @@
+.layout {
+    min-height: 100vh;
+}
+
+.ant-layout-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+}
+
+.ant-layout-content {
+    padding: 24px;
+    background: #f0f2f5;
+}
+
+.ant-layout-footer {
+    text-align: center;
+    background: #f0f2f5;
+}
+
+.ant-menu-horizontal {
+    border: none;
+    background: transparent;
+}
+
+.ant-menu-horizontal .ant-menu-item {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.ant-menu-horizontal .ant-menu-item:hover {
+    color: #fff;
+}
+
+.ant-menu-horizontal .ant-menu-item-selected {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+h1 {
+    margin-bottom: 24px;
+    color: #262626;
+}
+
+.ant-card {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.ant-statistic-title {
+    font-size: 14px;
+    color: #8c8c8c;
+}
+
+.ant-table {
+    background: #fff;
+}
+
+.ant-table-thead>tr>th {
+    background: #fafafa;
+    font-weight: 600;
+}
