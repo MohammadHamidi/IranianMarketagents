@@ -1,0 +1,23 @@
+[
+  {
+    "vendor": "digikala.com",
+    "success": false,
+    "products_found": 0,
+    "error_message": "Cannot connect to host www.digikala.com:443 ssl:True [SSLCertVerificationError: (1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1006)')]",
+    "products": []
+  },
+  {
+    "vendor": "technolife.ir",
+    "success": false,
+    "products_found": 0,
+    "error_message": "Cannot connect to host www.technolife.ir:443 ssl:True [SSLCertVerificationError: (1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1006)')]",
+    "products": []
+  },
+  {
+    "vendor": "meghdadit.com",
+    "success": true,
+    "products_found": 0,
+    "error_message": null,
+    "products": []
+  }
+]

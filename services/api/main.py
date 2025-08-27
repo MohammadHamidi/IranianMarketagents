@@ -45,7 +45,7 @@ ALERT_CREATIONS = Counter('api_alert_creations_total', 'Alert creations', ['type
 
 # Configuration
 class Config:
-    REDIS_URL = os.getenv('REDIS_URL', 'redis://redis:6379/0')
+    REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/1')
     JWT_SECRET = os.getenv('JWT_SECRET', 'dev_jwt_secret_change_me')
     JWT_ALGORITHM = 'HS256'
     JWT_EXPIRY_HOURS = 24
@@ -333,24 +333,48 @@ async def root():
 async def health_check():
     """Health check endpoint"""
     start_time = time.time()
-    
+
     services = {}
-    
+
     # Check Redis
     try:
         await redis_client.ping()
         services["redis"] = "healthy"
     except Exception:
         services["redis"] = "unhealthy"
-    
+
     overall_status = "healthy" if all(s == "healthy" for s in services.values()) else "unhealthy"
-    
+
     return HealthResponse(
         status=overall_status,
         timestamp=datetime.now(timezone.utc).isoformat(),
         services=services,
         uptime_seconds=time.time() - start_time
     )
+
+@app.get("/data/status", tags=["Debug"])
+async def get_data_status():
+    """Get current data status for debugging"""
+    try:
+        # Check Redis connection
+        await redis_client.ping()
+        redis_status = "connected"
+
+        # Check for real data
+        real_data_flag = await redis_client.get('real_data_available')
+        product_keys = await redis_client.keys("product:*")
+        summary = await redis_client.hgetall('scraping_summary')
+
+        return {
+            "redis_status": redis_status,
+            "real_data_flag": bool(real_data_flag),
+            "product_count": len(product_keys),
+            "scraping_summary": {k.decode(): v.decode() for k, v in summary.items()} if summary else {},
+            "sample_products": [key.decode() for key in product_keys[:5]],
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        return {"error": str(e), "redis_status": "error"}
 
 @app.get("/metrics", tags=["Monitoring"])
 async def metrics():
@@ -422,6 +446,20 @@ async def login(request: Request, login_data: UserLogin):
     
     return TokenResponse(access_token=token)
 
+async def check_real_data_available():
+    """Check if real scraped data is available"""
+    try:
+        # Check if real data flag is set
+        real_data_flag = await redis_client.get('real_data_available')
+        if real_data_flag:
+            return True
+
+        # Check if we have recent products in Redis
+        product_keys = await redis_client.keys("product:*")
+        return len(product_keys) > 0
+    except:
+        return False
+
 # Product search endpoints
 @app.get("/products/search", response_model=List[ProductResponse], tags=["Products"])
 @limiter.limit("100/hour")
@@ -437,9 +475,9 @@ async def search_products(
     offset: int = Query(0, ge=0),
     current_user: Dict = Depends(get_current_user_optional)
 ):
-    """Search products across Iranian e-commerce sites"""
+    """Search products with prioritized real data"""
 
-    logger.info(f"🔍 Products search called with query: '{query}', limit: {limit}")
+    logger.info(f"🔍 Search called: '{query}'")
 
     SEARCH_REQUESTS.labels(query_type="text").inc()
 
@@ -452,88 +490,84 @@ async def search_products(
         if cached_result:
             logger.info("📋 Returning cached result")
             return json.loads(cached_result.decode())
-        
-        # Use the real data provider
-        if real_data_provider:
+
+        # Check if real data is available
+        has_real_data = await check_real_data_available()
+        logger.info(f"Real data available: {has_real_data}")
+
+        if has_real_data and real_data_provider:
             try:
-                # Search for products using the real data provider
                 real_products = await real_data_provider.search_products(query, category, limit)
-                
                 if real_products:
-                    logger.info(f"✅ Returning {len(real_products)} real products from data provider")
+                    logger.info(f"✅ Returning {len(real_products)} REAL products")
                     # Cache result for 10 minutes
                     await redis_client.setex(cache_key, 600, json.dumps(real_products))
                     return [ProductResponse(**p) for p in real_products]
             except Exception as e:
-                logger.error(f"❌ Error searching products with real data provider: {e}")
-                
-        # If real data provider failed or no products found, try direct Redis access
-        try:
-            # Get all product keys
-            product_keys = await redis_client.keys("product:*")
-            logger.info(f"Found {len(product_keys)} product keys in Redis")
+                logger.error(f"❌ Error with real data: {e}")
 
-            if product_keys:
-                logger.info(f"Processing first product key: {product_keys[0]}")
-                real_products = []
+        # Try direct Redis access if real data provider failed
+        if has_real_data:
+            try:
+                # Get all product keys
+                product_keys = await redis_client.keys("product:*")
+                logger.info(f"Found {len(product_keys)} product keys in Redis")
 
-                for key in product_keys[:limit]:  # Limit results
-                    product_data = await redis_client.hgetall(key)
-                    logger.info(f"Retrieved data for key {key}: {len(product_data)} fields")
-                    if product_data:
-                        # Convert Redis data back to ProductResponse format
-                        try:
-                            product = ProductResponse(
-                                product_id=product_data.get(b'product_id', b'').decode(),
-                                canonical_title=product_data.get(b'title', b'').decode(),
-                                canonical_title_fa=product_data.get(b'title_fa', b'').decode(),
-                                brand=product_data.get(b'vendor', b'').decode().split('.')[0].title(),
-                                category=product_data.get(b'category', b'mobile').decode(),
-                                model=product_data.get(b'title', b'').decode(),
-                                current_prices=[
-                                    {
+                if product_keys:
+                    real_products = []
+                    for key in product_keys[:limit]:  # Limit results
+                        product_data = await redis_client.hgetall(key)
+                        if product_data:
+                            try:
+                                product = ProductResponse(
+                                    product_id=product_data.get(b'product_id', b'').decode(),
+                                    canonical_title=product_data.get(b'title', b'').decode(),
+                                    canonical_title_fa=product_data.get(b'title_fa', b'').decode(),
+                                    brand=product_data.get(b'vendor', b'').decode().split('.')[0].title(),
+                                    category=product_data.get(b'category', b'mobile').decode(),
+                                    model=product_data.get(b'title', b'').decode(),
+                                    current_prices=[
+                                        {
+                                            "vendor": product_data.get(b'vendor', b'').decode(),
+                                            "vendor_name_fa": product_data.get(b'vendor_name_fa', b'').decode(),
+                                            "price_toman": int(product_data.get(b'price_toman', b'0').decode()),
+                                            "price_usd": float(product_data.get(b'price_usd', b'0').decode()),
+                                            "availability": bool(int(product_data.get(b'availability', b'1').decode())),
+                                            "product_url": product_data.get(b'product_url', b'').decode(),
+                                            "last_updated": product_data.get(b'last_updated', b'').decode()
+                                        }
+                                    ],
+                                    lowest_price={
                                         "vendor": product_data.get(b'vendor', b'').decode(),
                                         "vendor_name_fa": product_data.get(b'vendor_name_fa', b'').decode(),
                                         "price_toman": int(product_data.get(b'price_toman', b'0').decode()),
                                         "price_usd": float(product_data.get(b'price_usd', b'0').decode()),
-                                        "availability": bool(int(product_data.get(b'availability', b'1').decode())),
-                                        "product_url": product_data.get(b'product_url', b'').decode(),
-                                        "last_updated": product_data.get(b'last_updated', b'').decode()
-                                    }
-                                ],
-                                lowest_price={
-                                    "vendor": product_data.get(b'vendor', b'').decode(),
-                                    "vendor_name_fa": product_data.get(b'vendor_name_fa', b'').decode(),
-                                    "price_toman": int(product_data.get(b'price_toman', b'0').decode()),
-                                    "price_usd": float(product_data.get(b'price_usd', b'0').decode()),
-                                },
-                                highest_price={
-                                    "vendor": product_data.get(b'vendor', b'').decode(),
-                                    "vendor_name_fa": product_data.get(b'vendor_name_fa', b'').decode(),
-                                    "price_toman": int(product_data.get(b'price_toman', b'0').decode()),
-                                    "price_usd": float(product_data.get(b'price_usd', b'0').decode()),
-                                },
-                                price_range_pct=0.0,  # Simplified for now
-                                available_vendors=1,  # Simplified for now
-                                last_updated=product_data.get(b'last_updated', b'').decode()
-                            )
-                            real_products.append(product)
-                            logger.info(f"✅ Successfully converted product: {product.canonical_title}")
-                        except Exception as conv_error:
-                            logger.error(f"❌ Failed to convert product {key}: {conv_error}")
-                            continue
+                                    },
+                                    highest_price={
+                                        "vendor": product_data.get(b'vendor', b'').decode(),
+                                        "vendor_name_fa": product_data.get(b'vendor_name_fa', b'').decode(),
+                                        "price_toman": int(product_data.get(b'price_toman', b'0').decode()),
+                                        "price_usd": float(product_data.get(b'price_usd', b'0').decode()),
+                                    },
+                                    price_range_pct=0.0,
+                                    available_vendors=1,
+                                    last_updated=product_data.get(b'last_updated', b'').decode()
+                                )
+                                real_products.append(product)
+                            except Exception as conv_error:
+                                logger.error(f"❌ Failed to convert product {key}: {conv_error}")
+                                continue
 
-                if real_products:
-                    logger.info(f"✅ Returning {len(real_products)} real products from Redis")
-                    # Cache result for 10 minutes
-                    await redis_client.setex(cache_key, 600, json.dumps([p.dict() for p in real_products]))
-                    return real_products
+                    if real_products:
+                        logger.info(f"✅ Returning {len(real_products)} real products from Redis")
+                        await redis_client.setex(cache_key, 600, json.dumps([p.dict() for p in real_products]))
+                        return real_products
 
-        except Exception as e:
-            logger.warning(f"Failed to fetch real data from Redis: {e}")
+            except Exception as e:
+                logger.warning(f"Failed to fetch real data from Redis: {e}")
 
-        # Fallback to mock data if no real data available
-        logger.info("📊 Using mock data (no real scraped data available)")
+        # Fallback to mock data
+        logger.info("📊 Using mock data (no real data available)")
         mock_products = [
             ProductResponse(
                 product_id=f"product_{i}",

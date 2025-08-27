@@ -1,0 +1,67 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "rules/*.yml"
+
+scrape_configs:
+  # Iranian Price Intelligence API
+  - job_name: 'iranian-price-api'
+    static_configs:
+      - targets: ['api-service:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Scraper Service
+  - job_name: 'iranian-price-scraper'
+    static_configs:
+      - targets: ['scraper-service:9001']
+    metrics_path: '/metrics'
+    scrape_interval: 60s
+
+  # Product Matcher Service
+  - job_name: 'iranian-price-matcher'
+    static_configs:
+      - targets: ['matcher-service:9002']
+    metrics_path: '/metrics'
+    scrape_interval: 60s
+
+  # Pipeline Orchestrator
+  - job_name: 'iranian-price-pipeline'
+    static_configs:
+      - targets: ['pipeline-orchestrator:9003']
+    metrics_path: '/metrics'
+    scrape_interval: 60s
+
+  # Neo4j Database
+  - job_name: 'neo4j'
+    static_configs:
+      - targets: ['neo4j:2004']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # Redis
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    scrape_interval: 30s
+
+  # Node Exporter (System metrics)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 30s
+
+  # Nginx
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+    scrape_interval: 30s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093

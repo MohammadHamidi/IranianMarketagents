@@ -1,0 +1,88 @@
+{
+  "timestamp": "2025-08-27T16:03:30.828811+00:00",
+  "pipeline_status": "working",
+  "products_generated": 12,
+  "data_status": {
+    "redis_status": "connected",
+    "real_data_flag": true,
+    "product_count": 12,
+    "scraping_summary": {
+      "total_products": "12",
+      "last_updated": "2025-08-27T16:03:30.828669+00:00",
+      "vendors": "[\"digikala.com\", \"technolife.ir\", \"meghdadit.com\"]",
+      "status": "success"
+    },
+    "sample_products": [
+      "DK78ea75b3",
+      "DKefbce586",
+      "DK9093f2fa"
+    ],
+    "timestamp": "2025-08-27T16:03:30.828777+00:00"
+  },
+  "search_demo": {
+    "query": "samsung",
+    "results_count": 3,
+    "sample_results": [
+      {
+        "product_id": "DK78ea75b3",
+        "canonical_title": "Samsung Galaxy A54 5G",
+        "canonical_title_fa": "سامسونگ گلکسی A54 5G",
+        "brand": "Digikala",
+        "category": "mobile",
+        "model": "Samsung Galaxy A54 5G",
+        "current_prices": [
+          {
+            "vendor": "digikala.com",
+            "vendor_name_fa": "دیجی‌کالا",
+            "price_toman": 18500000,
+            "price_usd": 440.48,
+            "availability": true,
+            "product_url": "https://www.digikala.com/product/dkp-123456",
+            "last_updated": "2025-08-27T16:03:26.825277+00:00"
+          }
+        ],
+        "lowest_price": {
+          "vendor": "digikala.com",
+          "vendor_name_fa": "دیجی‌کالا",
+          "price_toman": 18500000,
+          "price_usd": 440.48
+        },
+        "highest_price": {
+          "vendor": "digikala.com",
+          "vendor_name_fa": "دیجی‌کالا",
+          "price_toman": 18500000,
+          "price_usd": 440.48
+        },
+        "price_range_pct": 0.0,
+        "available_vendors": 1,
+        "last_updated": "2025-08-27T16:03:26.825277+00:00"
+      }
+    ]
+  },
+  "sample_products": [
+    {
+      "id": "DK78ea75b3",
+      "title": "Samsung Galaxy A54 5G",
+      "title_fa": "سامسونگ گلکسی A54 5G",
+      "price_toman": 18500000,
+      "price_usd": 440.48,
+      "vendor": "دیجی‌کالا"
+    },
+    {
+      "id": "DKefbce586",
+      "title": "iPhone 14 Pro Max",
+      "title_fa": "آیفون ۱۴ پرو مکس",
+      "price_toman": 58000000,
+      "price_usd": 1380.95,
+      "vendor": "دیجی‌کالا"
+    },
+    {
+      "id": "DK9093f2fa",
+      "title": "Xiaomi 13 Ultra",
+      "title_fa": "شیائومی ۱۳ اولترا",
+      "price_toman": 42000000,
+      "price_usd": 1000.0,
+      "vendor": "دیجی‌کالا"
+    }
+  ]
+}

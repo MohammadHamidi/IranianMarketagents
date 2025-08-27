@@ -1,0 +1,23 @@
+[
+  {
+    "vendor": "digikala.com",
+    "success": true,
+    "products_found": 0,
+    "error_message": null,
+    "products": []
+  },
+  {
+    "vendor": "technolife.ir",
+    "success": false,
+    "products_found": 0,
+    "error_message": "400, message='Got more than 8190 bytes (8570) when reading Header value is too long.', url=URL('https://www.technolife.com/product/list/164_13956_45/%DA%AF%D9%88%D8%B4%DB%8C-%D9%85%D9%88%D8%A8%D8%A7%DB%8C%D9%84')",
+    "products": []
+  },
+  {
+    "vendor": "meghdadit.com",
+    "success": true,
+    "products_found": 0,
+    "error_message": null,
+    "products": []
+  }
+]

@@ -1,113 +1,36 @@
 #!/usr/bin/env python3
 """
-Iranian Price Intelligence Scraper Service
+Enhanced scraper main entry point
 """
 
 import asyncio
-import json
-import logging
-from datetime import datetime
-from typing import Dict, List
-import redis.asyncio as redis
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Import the real web scraper
-from real_scraper import IranianWebScraper, ProductData
-
-# Redis connection
-redis_client = None
-
-async def store_products_in_redis(products: List[ProductData]):
-    """Store scraped products in Redis"""
-    try:
-        pipe = redis_client.pipeline()
-
-        for product in products:
-            # Convert dataclass to dict
-            product_dict = {
-                'product_id': product.product_id,
-                'title': product.title,
-                'title_fa': product.title_fa,
-                'price_toman': str(product.price_toman),
-                'price_usd': str(product.price_usd),
-                'vendor': product.vendor,
-                'vendor_name_fa': product.vendor_name_fa,
-                'availability': '1' if product.availability else '0',
-                'product_url': product.product_url,
-                'image_url': product.image_url,
-                'category': product.category,
-                'last_updated': product.last_updated
-            }
-
-            key = f"product:{product.product_id}"
-            pipe.hset(key, mapping=product_dict)
-            pipe.expire(key, 86400)  # Expire in 24 hours to keep data available longer
-
-        await pipe.execute()
-        logger.info(f"✅ Stored {len(products)} real products in Redis")
-
-        # Also store a summary for the API
-        summary_key = "scraping_summary"
-        summary_data = {
-            'total_products': str(len(products)),
-            'last_updated': datetime.now().isoformat(),
-            'vendors': json.dumps(list(set(p.vendor for p in products)))
-        }
-        pipe.hset(summary_key, mapping=summary_data)
-        pipe.expire(summary_key, 86400)  # Also keep summary available for 24 hours
-        await pipe.execute()
-
-    except Exception as e:
-        logger.error(f"❌ Failed to store products in Redis: {e}")
+import os
+import sys
 
 async def main():
-    """Main scraping function"""
-    global redis_client
+    """Main entry point - choose mode based on environment"""
 
-    try:
-        # Connect to Redis using settings
-        from config.settings import settings
-        redis_client = redis.from_url(settings.REDIS_URL)
-        await redis_client.ping()
-        logger.info("✅ Connected to Redis")
+    # Check if continuous scraping is enabled
+    continuous_mode = os.getenv('ENABLE_CONTINUOUS_SCRAPING', 'false').lower() == 'true'
 
-        # Initialize the real web scraper
-        scraper = await IranianWebScraper.create()
-
-        # Run scraping cycle
-        logger.info("🚀 Starting real Iranian e-commerce scraping...")
-        results = await scraper.run_scraping_cycle()
-
-        # Collect all products from successful scrapes
-        all_products = []
-        for result in results:
-            if result.success and result.products:
-                all_products.extend(result.products)
-                logger.info(f"📦 Collected {len(result.products)} products from {result.vendor}")
-
-        logger.info(f"📊 Total real products scraped: {len(all_products)}")
-
-        # Store real data in Redis
-        if all_products:
-            await store_products_in_redis(all_products)
-            logger.info("💾 Real product data stored in Redis successfully!")
-        else:
-            logger.warning("⚠️ No products were scraped successfully")
-
-    except Exception as e:
-        logger.error(f"❌ Scraping failed: {e}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-    finally:
-        # Close connections
-        if redis_client:
-            await redis_client.close()
-        if scraper:
-            await scraper.close()
-            logger.info("🔌 Closed web scraper session")
+    if continuous_mode:
+        print("🔄 Starting in continuous scraping mode...")
+        from continuous_scraper import ContinuousScraper
+        scraper = ContinuousScraper()
+        try:
+            await scraper.initialize()
+            await scraper.run_continuously()
+        finally:
+            await scraper.cleanup()
+    else:
+        print("🚀 Starting in single-run mode...")
+        from continuous_scraper import ContinuousScraper
+        scraper = ContinuousScraper()
+        try:
+            await scraper.initialize()
+            await scraper.run_scraping_cycle()
+        finally:
+            await scraper.cleanup()
 
 # For testing without Docker
 def test_scraper():

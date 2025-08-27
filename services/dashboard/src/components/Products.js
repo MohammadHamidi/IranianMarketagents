@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { 
-    Card, 
-    Table, 
-    Input, 
-    Button, 
-    Space, 
-    Tag, 
-    Modal, 
-    Form, 
-    Select, 
-    message, 
+import {
+    Card,
+    Table,
+    Input,
+    Button,
+    Space,
+    Tag,
+    Modal,
+    Form,
+    Select,
+    message,
     Popconfirm,
     Tooltip,
     Row,
@@ -18,10 +18,10 @@ import {
     Divider,
     Alert
 } from 'antd';
-import { 
-    SearchOutlined, 
-    PlusOutlined, 
-    EditOutlined, 
+import {
+    SearchOutlined,
+    PlusOutlined,
+    EditOutlined,
     DeleteOutlined,
     EyeOutlined,
     LinkOutlined,
@@ -46,20 +46,31 @@ const Products = () => {
         totalValue: 0
     });
     const [apiAvailable, setApiAvailable] = useState(false);
+    const [dataStatus, setDataStatus] = useState({ real_data_flag: false });
+
+    // Add data status check
+    const checkDataStatus = async () => {
+        try {
+            const response = await api.get('/data/status');
+            setDataStatus(response.data);
+        } catch (error) {
+            console.error('Failed to check data status:', error);
+        }
+    };
 
     // Fetch products from API
     const fetchProducts = async () => {
         setLoading(true);
         try {
             let productsData = [];
-            
+
             if (apiAvailable) {
                 // Try to fetch from real API with better error handling
                 try {
                     // Provide a default search query if none is entered
                     const searchQuery = searchText.trim() || 'mobile'; // Default to 'mobile' if empty
                     const response = await api.get(`/products/search?query=${searchQuery}&limit=100`);
-                    
+
                     if (response.status === 200) {
                         productsData = response.data;
                         console.log(`Successfully fetched ${productsData.length} products from API`);
@@ -84,12 +95,12 @@ const Products = () => {
             }));
 
             setProducts(productsWithKeys);
-            
+
             // Calculate stats
-            const totalValue = productsData.reduce((sum, product) => 
+            const totalValue = productsData.reduce((sum, product) =>
                 sum + (product.lowest_price?.price_toman || 0), 0
             );
-            
+
             setStats({
                 totalProducts: productsData.length,
                 activeProducts: productsData.filter(p => p.available_vendors > 0).length,
@@ -168,13 +179,13 @@ const Products = () => {
         try {
             if (apiAvailable) {
                 const refreshResponse = await api.post(`/products/${productId}/refresh-prices`);
-                
+
                 if (refreshResponse.data && refreshResponse.data.status === 'processing') {
                     message.loading('Refreshing prices...');
-                    
+
                     // Give the backend some time to process
                     await new Promise(resolve => setTimeout(resolve, 2000));
-                    
+
                     message.success('Prices refreshed successfully!');
                 } else {
                     message.warning('Price refresh initiated but status unclear');
@@ -185,7 +196,7 @@ const Products = () => {
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 message.success('Prices refreshed successfully (mock mode)!');
             }
-            
+
             // Reload data regardless of whether we're in API or mock mode
             fetchProducts();
         } catch (error) {
@@ -195,20 +206,34 @@ const Products = () => {
     };
 
     useEffect(() => {
-        // Check API availability on component mount
+        // Check API availability and data status on component mount
         const checkAPI = async () => {
             try {
                 const healthResponse = await api.get('/health');
                 const isAvailable = healthResponse.status === 200 && healthResponse.data.status === 'healthy';
                 setApiAvailable(isAvailable);
                 console.log("API health check:", isAvailable ? "Connected" : "Disconnected");
+
+                // Also check data status if API is available
+                if (isAvailable) {
+                    await checkDataStatus();
+                }
             } catch (error) {
                 console.error("API health check failed:", error);
                 setApiAvailable(false);
             }
         };
         checkAPI();
-    }, []);
+
+        // Set up periodic data status check
+        const interval = setInterval(() => {
+            if (apiAvailable) {
+                checkDataStatus();
+            }
+        }, 30000); // Check every 30 seconds
+
+        return () => clearInterval(interval);
+    }, [apiAvailable]);
 
     useEffect(() => {
         fetchProducts();
@@ -299,25 +324,25 @@ const Products = () => {
             render: (_, record) => (
                 <Space size="small">
                     <Tooltip title="View Details">
-                        <Button 
-                            type="text" 
-                            icon={<EyeOutlined />} 
+                        <Button
+                            type="text"
+                            icon={<EyeOutlined />}
                             size="small"
                             onClick={() => message.info('View details feature coming soon!')}
                         />
                     </Tooltip>
                     <Tooltip title="Refresh Prices">
-                        <Button 
-                            type="text" 
-                            icon={<ReloadOutlined />} 
+                        <Button
+                            type="text"
+                            icon={<ReloadOutlined />}
                             size="small"
                             onClick={() => handleRefreshPrices(record.product_id)}
                         />
                     </Tooltip>
                     <Tooltip title="Edit Product">
-                        <Button 
-                            type="text" 
-                            icon={<EditOutlined />} 
+                        <Button
+                            type="text"
+                            icon={<EditOutlined />}
                             size="small"
                             onClick={() => {
                                 setEditingProduct(record);
@@ -332,10 +357,10 @@ const Products = () => {
                         cancelText="No"
                     >
                         <Tooltip title="Delete Product">
-                            <Button 
-                                type="text" 
-                                danger 
-                                icon={<DeleteOutlined />} 
+                            <Button
+                                type="text"
+                                danger
+                                icon={<DeleteOutlined />}
                                 size="small"
                             />
                         </Tooltip>
@@ -382,11 +407,11 @@ const Products = () => {
                 </Col>
             </Row>
 
-            <Card 
-                title="Products Management" 
+            <Card
+                title="Products Management"
                 extra={
-                    <Button 
-                        type="primary" 
+                    <Button
+                        type="primary"
                         icon={<PlusOutlined />}
                         onClick={() => {
                             setEditingProduct(null);
@@ -405,7 +430,7 @@ const Products = () => {
                         value={searchText}
                         onChange={(e) => setSearchText(e.target.value)}
                     />
-                    <Button 
+                    <Button
                         icon={<ReloadOutlined />}
                         onClick={fetchProducts}
                         loading={loading}
@@ -414,13 +439,30 @@ const Products = () => {
                     </Button>
                 </Space>
 
+                {/* Add status indicator */}
                 <Alert
-                    message={apiAvailable ? "Real-time Price Monitoring" : "Demo Mode - Using Mock Data"}
+                    message={dataStatus.real_data_flag ? "Live Data Active" : "Demo Mode"}
+                    description={dataStatus.real_data_flag
+                        ? `Showing real data from ${dataStatus.product_count} products. Last updated: ${dataStatus.scraping_summary?.last_updated}`
+                        : "No real scraped data available. Showing demo data."
+                    }
+                    type={dataStatus.real_data_flag ? "success" : "warning"}
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                    action={
+                        <Button size="small" onClick={checkDataStatus}>
+                            Refresh Status
+                        </Button>
+                    }
+                />
+
+                <Alert
+                    message={apiAvailable ? "API Connected" : "API Disconnected"}
                     description={apiAvailable
                         ? (searchText.trim() === ""
                             ? "Showing products for 'mobile' category. Enter a search term to filter results."
                             : `Showing products matching: "${searchText}"`
-                          )
+                        )
                         : "Currently running in demo mode with mock data. Connect to the API to see real data."
                     }
                     type={apiAvailable ? "info" : "warning"}
@@ -432,11 +474,11 @@ const Products = () => {
                     columns={columns}
                     dataSource={products}
                     loading={loading}
-                    pagination={{ 
+                    pagination={{
                         pageSize: 10,
                         showSizeChanger: true,
                         showQuickJumper: true,
-                        showTotal: (total, range) => 
+                        showTotal: (total, range) =>
                             `${range[0]}-${range[1]} of ${total} products`
                     }}
                     scroll={{ x: 1200 }}

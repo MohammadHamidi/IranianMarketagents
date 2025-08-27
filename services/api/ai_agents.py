@@ -337,14 +337,24 @@ Always focus on improving system efficiency and reliability."""
             {"role": "user", "content": task}
         ]
 
-        response = await self.client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=messages,
-            tools=agent_config["tools"],
-            tool_choice="auto"
-        )
-
-        return response
+        try:
+            response = await self.client.chat.completions.create(
+                model="gpt-4.1-mini",
+                messages=messages,
+                tools=agent_config["tools"],
+                tool_choice="auto"
+            )
+            return response
+        except Exception as e:
+            logger.error(f"AI API call failed: {e}")
+            # Return a mock response for demo purposes
+            return type('MockResponse', (), {
+                'choices': [type('Choice', (), {
+                    'message': type('Message', (), {
+                        'content': f"AI service temporarily unavailable. Error: {str(e)}"
+                    })()
+                })()]
+            })()
 
     # Tool implementations
     async def search_market_trends(self, category: str, limit: int = 10):

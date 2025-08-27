@@ -1,0 +1,49 @@
+[
+  {
+    "vendor": "digikala.com",
+    "success": true,
+    "products_found": 1,
+    "error_message": null,
+    "products": [
+      {
+        "product_id": "DKa5b4829b",
+        "title": "Samsung Galaxy A54 5G",
+        "title_fa": "سامسونگ گلکسی A54 5G",
+        "price_toman": 18500000,
+        "price_usd": 440.48,
+        "vendor": "digikala.com",
+        "vendor_name_fa": "دیجی‌کالا",
+        "availability": true,
+        "product_url": "https://www.digikala.com/product/dkp-123456",
+        "last_updated": "2025-08-27T16:02:33.332796+00:00"
+      }
+    ]
+  },
+  {
+    "vendor": "technolife.ir",
+    "success": true,
+    "products_found": 1,
+    "error_message": null,
+    "products": [
+      {
+        "product_id": "TLf4a49fdc",
+        "title": "Samsung Galaxy A34 5G",
+        "title_fa": "سامسونگ گلکسی A34 5G",
+        "price_toman": 15200000,
+        "price_usd": 361.9,
+        "vendor": "technolife.ir",
+        "vendor_name_fa": "تکنولایف",
+        "availability": true,
+        "product_url": "https://www.technolife.ir/product/12345",
+        "last_updated": "2025-08-27T16:02:35.334588+00:00"
+      }
+    ]
+  },
+  {
+    "vendor": "meghdadit.com",
+    "success": true,
+    "products_found": 0,
+    "error_message": null,
+    "products": []
+  }
+]
