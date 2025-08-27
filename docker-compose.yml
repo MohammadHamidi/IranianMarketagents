@@ -176,7 +176,6 @@ services:
       context: ./services/dashboard
       dockerfile: Dockerfile
       args:
-        - REACT_APP_API_URL=http://localhost:8000
         - REACT_APP_ENVIRONMENT=development
     container_name: iranian-price-dashboard
     depends_on:

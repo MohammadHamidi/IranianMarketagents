@@ -1,7 +1,7 @@
 import axios from 'axios';
 
-// API Configuration
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+// API Configuration - Use /api/ prefix to go through nginx proxy
+const API_BASE_URL = process.env.REACT_APP_API_URL || '/api';
 
 // Create axios instance with default config
 const api = axios.create({
@@ -331,12 +331,12 @@ export const mockData = {
 export const checkAPIHealth = async () => {
     try {
         const response = await api.get('/health');
-        
+
         // Check if API returned proper health data
-        const isHealthy = response.status === 200 && 
-                         response.data && 
-                         response.data.status === 'healthy';
-                         
+        const isHealthy = response.status === 200 &&
+            response.data &&
+            response.data.status === 'healthy';
+
         if (isHealthy) {
             console.log('API health check successful, services:', response.data.services);
             return true;

@@ -33,43 +33,55 @@ class ContinuousScraper:
         logger.info("✅ Scraper initialized")
 
     async def store_products_in_redis(self, products):
-        """Store scraped products in Redis with proper keys"""
+        """Store scraped products in Redis with proper keys for API consumption"""
         try:
+            import time
             pipe = self.redis_client.pipeline()
 
             for product in products:
-                # Store individual product
+                # Store individual product with consistent format
                 product_dict = {
                     'product_id': product.product_id,
-                    'title': product.title,
+                    'canonical_title': product.title,  # API expects this key
+                    'canonical_title_fa': product.title_fa,
+                    'title': product.title,  # Keep for backward compatibility
                     'title_fa': product.title_fa,
                     'price_toman': str(product.price_toman),
                     'price_usd': str(product.price_usd),
                     'vendor': product.vendor,
                     'vendor_name_fa': product.vendor_name_fa,
+                    'brand': product.vendor.split('.')[0].title(),  # Extract brand from vendor
+                    'category': product.category,
                     'availability': '1' if product.availability else '0',
                     'product_url': product.product_url,
                     'image_url': product.image_url,
-                    'category': product.category,
-                    'last_updated': product.last_updated
+                    'last_updated': product.last_updated,
+                    # Add required fields for API compatibility
+                    'available_vendors': '1',
+                    'price_range_pct': '0.0'
                 }
 
                 key = f"product:{product.product_id}"
                 pipe.hset(key, mapping=product_dict)
-                pipe.expire(key, 3600)  # 1 hour expiry
+                pipe.expire(key, 7200)  # 2 hours expiry (longer than before)
 
-            # Store summary for API
+            # Store comprehensive summary for API
             summary_data = {
                 'total_products': str(len(products)),
                 'last_updated': datetime.now().isoformat(),
                 'vendors': json.dumps(list(set(p.vendor for p in products))),
-                'status': 'success'
+                'categories': json.dumps(list(set(p.category for p in products))),
+                'status': 'success',
+                'scraper_run_id': str(int(time.time()))
             }
             pipe.hset('scraping_summary', mapping=summary_data)
-            pipe.expire('scraping_summary', 3600)
+            pipe.expire('scraping_summary', 7200)
+
+            # Set flag that real data is available (with longer expiry)
+            pipe.setex('real_data_available', 7200, 'true')
 
             await pipe.execute()
-            logger.info(f"✅ Stored {len(products)} products in Redis")
+            logger.info(f"✅ Stored {len(products)} products in Redis with API-compatible format")
 
         except Exception as e:
             logger.error(f"❌ Failed to store in Redis: {e}")

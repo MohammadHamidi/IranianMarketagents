@@ -461,6 +461,115 @@ async def check_real_data_available():
         return False
 
 # Product search endpoints
+@app.get("/monitor/data-freshness", tags=["Monitoring"])
+async def monitor_data_freshness():
+    """Monitor data freshness and quality"""
+    try:
+        # Check data availability
+        real_data_flag = await redis_client.get('real_data_available')
+        product_keys = await redis_client.keys("product:*")
+        summary = await redis_client.hgetall('scraping_summary')
+
+        # Analyze data freshness
+        if summary and b'last_updated' in summary:
+            last_updated = datetime.fromisoformat(summary[b'last_updated'].decode())
+            age_minutes = (datetime.now() - last_updated).total_seconds() / 60
+
+            freshness_status = "fresh" if age_minutes < 60 else "stale" if age_minutes < 180 else "expired"
+        else:
+            freshness_status = "no_data"
+            age_minutes = 0
+
+        return {
+            "data_available": bool(real_data_flag),
+            "product_count": len(product_keys),
+            "freshness_status": freshness_status,
+            "age_minutes": round(age_minutes, 1),
+            "last_updated": summary.get(b'last_updated', b'').decode() if summary else None,
+            "vendors": json.loads(summary.get(b'vendors', b'[]').decode()) if summary else [],
+            "status": "healthy" if freshness_status in ["fresh", "stale"] and len(product_keys) > 0 else "unhealthy"
+        }
+    except Exception as e:
+        return {"error": str(e), "status": "error"}
+
+@app.get("/debug/redis-health", tags=["Debug"])
+async def redis_health_check():
+    """Detailed Redis health and performance check"""
+    try:
+        # Basic connection test
+        start_time = time.time()
+        await redis_client.ping()
+        ping_time = round((time.time() - start_time) * 1000, 2)
+
+        # Get Redis info
+        redis_info = await redis_client.info()
+
+        # Check memory usage
+        used_memory = redis_info.get('used_memory', 0)
+        max_memory = redis_info.get('maxmemory', 0)
+        memory_usage_pct = (used_memory / max_memory * 100) if max_memory > 0 else 0
+
+        # Check key counts
+        product_keys = await redis_client.keys("product:*")
+        total_keys = await redis_client.dbsize()
+
+        # Check data freshness
+        real_data_flag = await redis_client.get('real_data_available')
+        scraping_summary = await redis_client.hgetall('scraping_summary')
+
+        # Get slowlog (commands taking too long)
+        slowlog = await redis_client.slowlog_get(10)
+
+        return {
+            "connection": {
+                "status": "healthy",
+                "ping_time_ms": ping_time
+            },
+            "memory": {
+                "used_bytes": used_memory,
+                "used_human": f"{used_memory / 1024 / 1024:.1f} MB",
+                "max_bytes": max_memory,
+                "usage_percent": round(memory_usage_pct, 1)
+            },
+            "data": {
+                "real_data_available": bool(real_data_flag),
+                "product_keys": len(product_keys),
+                "total_keys": total_keys,
+                "last_scrape": scraping_summary.get(b'last_updated', b'never').decode() if scraping_summary else 'never'
+            },
+            "performance": {
+                "slow_commands": len(slowlog),
+                "redis_version": redis_info.get('redis_version', 'unknown'),
+                "connected_clients": redis_info.get('connected_clients', 0)
+            }
+        }
+
+    except Exception as e:
+        return {"error": str(e), "status": "unhealthy"}
+
+@app.get("/debug/performance-metrics", tags=["Debug"])
+async def get_performance_metrics():
+    """Get detailed performance metrics for troubleshooting"""
+    try:
+        # Redis performance metrics
+        redis_info = await redis_client.info()
+
+        return {
+            "redis_metrics": {
+                "connected_clients": redis_info.get('connected_clients', 0),
+                "used_memory_human": redis_info.get('used_memory_human', '0B'),
+                "keyspace_hits": redis_info.get('keyspace_hits', 0),
+                "keyspace_misses": redis_info.get('keyspace_misses', 0),
+                "hit_rate": round(redis_info.get('keyspace_hits', 0) / max(redis_info.get('keyspace_hits', 0) + redis_info.get('keyspace_misses', 0), 1) * 100, 2),
+                "total_commands_processed": redis_info.get('total_commands_processed', 0),
+                "instantaneous_ops_per_sec": redis_info.get('instantaneous_ops_per_sec', 0)
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/products/search", response_model=List[ProductResponse], tags=["Products"])
 @limiter.limit("100/hour")
 async def search_products(
@@ -478,103 +587,117 @@ async def search_products(
     """Search products with prioritized real data"""
 
     logger.info(f"🔍 Search called: '{query}'")
-
     SEARCH_REQUESTS.labels(query_type="text").inc()
 
     # Build cache key
     cache_key = f"search:{hashlib.md5(f'{query}{category}{brand}{min_price}{max_price}{available_only}{limit}{offset}'.encode()).hexdigest()}"
 
     try:
-        # Check cache
+        # Check cache first
         cached_result = await redis_client.get(cache_key)
         if cached_result:
             logger.info("📋 Returning cached result")
             return json.loads(cached_result.decode())
 
-        # Check if real data is available
-        has_real_data = await check_real_data_available()
-        logger.info(f"Real data available: {has_real_data}")
+        # Step 1: Check if real data is available
+        real_data_flag = await redis_client.get('real_data_available')
+        product_keys = await redis_client.keys("product:*")
+        has_real_data = bool(real_data_flag) and len(product_keys) > 0
 
-        if has_real_data and real_data_provider:
-            try:
-                real_products = await real_data_provider.search_products(query, category, limit)
-                if real_products:
-                    logger.info(f"✅ Returning {len(real_products)} REAL products")
-                    # Cache result for 10 minutes
-                    await redis_client.setex(cache_key, 600, json.dumps(real_products))
-                    return [ProductResponse(**p) for p in real_products]
-            except Exception as e:
-                logger.error(f"❌ Error with real data: {e}")
+        logger.info(f"Real data check: flag={bool(real_data_flag)}, products={len(product_keys)}")
 
-        # Try direct Redis access if real data provider failed
         if has_real_data:
-            try:
-                # Get all product keys
-                product_keys = await redis_client.keys("product:*")
-                logger.info(f"Found {len(product_keys)} product keys in Redis")
+            # Step 2: Search through real products
+            matching_products = []
+            query_lower = query.lower()
 
-                if product_keys:
-                    real_products = []
-                    for key in product_keys[:limit]:  # Limit results
-                        product_data = await redis_client.hgetall(key)
-                        if product_data:
-                            try:
-                                product = ProductResponse(
-                                    product_id=product_data.get(b'product_id', b'').decode(),
-                                    canonical_title=product_data.get(b'title', b'').decode(),
-                                    canonical_title_fa=product_data.get(b'title_fa', b'').decode(),
-                                    brand=product_data.get(b'vendor', b'').decode().split('.')[0].title(),
-                                    category=product_data.get(b'category', b'mobile').decode(),
-                                    model=product_data.get(b'title', b'').decode(),
-                                    current_prices=[
-                                        {
-                                            "vendor": product_data.get(b'vendor', b'').decode(),
-                                            "vendor_name_fa": product_data.get(b'vendor_name_fa', b'').decode(),
-                                            "price_toman": int(product_data.get(b'price_toman', b'0').decode()),
-                                            "price_usd": float(product_data.get(b'price_usd', b'0').decode()),
-                                            "availability": bool(int(product_data.get(b'availability', b'1').decode())),
-                                            "product_url": product_data.get(b'product_url', b'').decode(),
-                                            "last_updated": product_data.get(b'last_updated', b'').decode()
-                                        }
-                                    ],
-                                    lowest_price={
-                                        "vendor": product_data.get(b'vendor', b'').decode(),
-                                        "vendor_name_fa": product_data.get(b'vendor_name_fa', b'').decode(),
-                                        "price_toman": int(product_data.get(b'price_toman', b'0').decode()),
-                                        "price_usd": float(product_data.get(b'price_usd', b'0').decode()),
-                                    },
-                                    highest_price={
-                                        "vendor": product_data.get(b'vendor', b'').decode(),
-                                        "vendor_name_fa": product_data.get(b'vendor_name_fa', b'').decode(),
-                                        "price_toman": int(product_data.get(b'price_toman', b'0').decode()),
-                                        "price_usd": float(product_data.get(b'price_usd', b'0').decode()),
-                                    },
-                                    price_range_pct=0.0,
-                                    available_vendors=1,
-                                    last_updated=product_data.get(b'last_updated', b'').decode()
-                                )
-                                real_products.append(product)
-                            except Exception as conv_error:
-                                logger.error(f"❌ Failed to convert product {key}: {conv_error}")
-                                continue
+            for key in product_keys[:100]:  # Process first 100 for performance
+                try:
+                    product_data = await redis_client.hgetall(key)
+                    if not product_data:
+                        continue
 
-                    if real_products:
-                        logger.info(f"✅ Returning {len(real_products)} real products from Redis")
-                        await redis_client.setex(cache_key, 600, json.dumps([p.dict() for p in real_products]))
-                        return real_products
+                    # Extract and decode data
+                    title = product_data.get(b'canonical_title', b'').decode().lower()
+                    title_fa = product_data.get(b'canonical_title_fa', b'').decode().lower()
+                    product_category = product_data.get(b'category', b'mobile').decode().lower()
+                    product_brand = product_data.get(b'brand', b'').decode().lower()
 
-            except Exception as e:
-                logger.warning(f"Failed to fetch real data from Redis: {e}")
+                    # Apply filters
+                    if category and product_category != category.lower():
+                        continue
+                    if brand and brand.lower() not in product_brand:
+                        continue
 
-        # Fallback to mock data
+                    # Search in title
+                    if query_lower in title or query_lower in title_fa:
+                        # Build product response
+                        current_price = int(product_data.get(b'price_toman', b'0').decode())
+
+                        # Apply price filters
+                        if min_price and current_price < min_price:
+                            continue
+                        if max_price and current_price > max_price:
+                            continue
+
+                        product = ProductResponse(
+                            product_id=product_data.get(b'product_id', b'').decode(),
+                            canonical_title=product_data.get(b'canonical_title', b'').decode(),
+                            canonical_title_fa=product_data.get(b'canonical_title_fa', b'').decode(),
+                            brand=product_data.get(b'brand', b'Unknown').decode(),
+                            category=product_category,
+                            model=product_data.get(b'canonical_title', b'').decode(),
+                            current_prices=[
+                                {
+                                    "vendor": product_data.get(b'vendor', b'').decode(),
+                                    "vendor_name_fa": product_data.get(b'vendor_name_fa', b'').decode(),
+                                    "price_toman": current_price,
+                                    "price_usd": float(product_data.get(b'price_usd', b'0').decode()),
+                                    "availability": bool(int(product_data.get(b'availability', b'1').decode())),
+                                    "product_url": product_data.get(b'product_url', b'').decode(),
+                                    "last_updated": product_data.get(b'last_updated', b'').decode()
+                                }
+                            ],
+                            lowest_price={
+                                "vendor": product_data.get(b'vendor', b'').decode(),
+                                "vendor_name_fa": product_data.get(b'vendor_name_fa', b'').decode(),
+                                "price_toman": current_price,
+                                "price_usd": float(product_data.get(b'price_usd', b'0').decode()),
+                            },
+                            highest_price={
+                                "vendor": product_data.get(b'vendor', b'').decode(),
+                                "vendor_name_fa": product_data.get(b'vendor_name_fa', b'').decode(),
+                                "price_toman": current_price,
+                                "price_usd": float(product_data.get(b'price_usd', b'0').decode()),
+                            },
+                            price_range_pct=0.0,
+                            available_vendors=1,
+                            last_updated=product_data.get(b'last_updated', b'').decode()
+                        )
+                        matching_products.append(product)
+
+                        if len(matching_products) >= limit:
+                            break
+
+                except Exception as e:
+                    logger.warning(f"Error processing product {key}: {e}")
+                    continue
+
+            if matching_products:
+                logger.info(f"✅ Returning {len(matching_products)} REAL products")
+                # Cache for 5 minutes
+                await redis_client.setex(cache_key, 300, json.dumps([p.dict() for p in matching_products]))
+                return matching_products
+
+        # Step 3: Fallback to mock data
         logger.info("📊 Using mock data (no real data available)")
         mock_products = [
             ProductResponse(
-                product_id=f"product_{i}",
+                product_id=f"mock_{i}",
                 canonical_title=f"Sample Product {i}",
                 canonical_title_fa=f"محصول نمونه {i}",
                 brand="Samsung" if i % 2 == 0 else "Apple",
-                category="mobile" if i < 5 else "laptop",
+                category="mobile",
                 model=f"Model {i}",
                 current_prices=[
                     {
@@ -594,31 +717,25 @@ async def search_products(
                     "price_usd": (1000000 + i * 100000) / 42500,
                 },
                 highest_price={
-                    "vendor": "technolife.ir",
-                    "vendor_name_fa": "تکنولایف",
-                    "price_toman": 1050000 + i * 100000,
-                    "price_usd": (1050000 + i * 100000) / 42500,
+                    "vendor": "digikala.com",
+                    "vendor_name_fa": "دیجی‌کالا",
+                    "price_toman": 1000000 + i * 100000,
+                    "price_usd": (1000000 + i * 100000) / 42500,
                 },
-                price_range_pct=5.0,
-                available_vendors=2,
-                last_updated=datetime.now(timezone.utc).isoformat(),
-                specifications={
-                    "storage_gb": 128,
-                    "ram_gb": 8,
-                    "screen_inches": 6.1
-                }
+                price_range_pct=0.0,
+                available_vendors=1,
+                last_updated=datetime.now(timezone.utc).isoformat()
             )
             for i in range(min(limit, 5))
         ]
 
-        # Cache result for 5 minutes
-        await redis_client.setex(cache_key, 300, json.dumps([p.dict() for p in mock_products]))
-
+        # Cache for 2 minutes (shorter for mock data)
+        await redis_client.setex(cache_key, 120, json.dumps([p.dict() for p in mock_products]))
         return mock_products
-    
+
     except Exception as e:
-        logger.error(f"Unhandled error in search_products: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        logger.error(f"❌ Search error: {e}")
+        raise HTTPException(status_code=500, detail="Search failed")
 
 @app.get("/products/{product_id}", response_model=ProductResponse, tags=["Products"])
 @limiter.limit("1000/hour")
@@ -1209,16 +1326,89 @@ async def manual_scrape_website(
     website_id: str = Path(...),
     current_user: Dict = Depends(get_current_user_optional)
 ):
-    """Manually trigger website scraping"""
-    
-    # Simulate scraping process
-    await asyncio.sleep(3)  # Simulate processing time
-    
-    return {
-        "website_id": website_id,
-        "message": "Manual scrape initiated successfully",
-        "status": "processing"
-    }
+    """Manually trigger website scraping with real data fetching"""
+    try:
+        # Get website information first
+        websites = await get_websites(request)
+        target_website = None
+
+        for website in websites:
+            if website.get("id") == website_id:
+                target_website = website
+                break
+
+        if not target_website:
+            raise HTTPException(status_code=404, detail="Website not found")
+
+        website_url = target_website.get("url", "")
+        vendor_domain = website_url.replace("https://www.", "").replace("https://", "")
+
+        logger.info(f"🔄 Starting manual scrape for {vendor_domain}")
+
+        # Import scraper here to avoid circular imports
+        from scraper.real_scraper import IranianWebScraper
+
+        # Initialize scraper
+        scraper = await IranianWebScraper.create()
+
+        try:
+            # Determine which scraping method to use based on vendor
+            scraping_results = []
+
+            if "digikala" in vendor_domain:
+                result = await scraper.scrape_digikala_all_products()
+                scraping_results.append(result)
+            elif "technolife" in vendor_domain:
+                result = await scraper.scrape_technolife_all_products()
+                scraping_results.append(result)
+            elif "meghdadit" in vendor_domain:
+                result = await scraper.scrape_meghdadit_all_products()
+                scraping_results.append(result)
+            else:
+                # Try generic scraping for unknown vendors
+                result = await scraper.scrape_generic_vendor(vendor_domain)
+                scraping_results.append(result)
+
+            # Store results in Redis
+            total_products = 0
+            all_products = []
+
+            for result in scraping_results:
+                if result.success:
+                    total_products += result.products_found
+                    all_products.extend(result.products)
+
+            if all_products:
+                # Store in Redis using the same format as continuous scraper
+                from scraper.continuous_scraper import ContinuousScraper
+                continuous_scraper = ContinuousScraper()
+                await continuous_scraper.initialize()
+                await continuous_scraper.store_products_in_redis(all_products)
+
+                logger.info(f"✅ Manual scrape completed: {total_products} products found for {vendor_domain}")
+
+                return {
+                    "website_id": website_id,
+                    "message": f"Manual scrape completed successfully! Found {total_products} products.",
+                    "status": "completed",
+                    "products_found": total_products,
+                    "vendor": vendor_domain
+                }
+            else:
+                return {
+                    "website_id": website_id,
+                    "message": "Manual scrape completed but no products found.",
+                    "status": "completed",
+                    "products_found": 0,
+                    "vendor": vendor_domain
+                }
+
+        finally:
+            await scraper.close()
+
+    except Exception as e:
+        logger.error(f"❌ Manual scrape failed for website {website_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Manual scrape failed: {str(e)}")
 
 # Error handlers
 @app.exception_handler(HTTPException)
@@ -1234,6 +1424,154 @@ _ai_agents_instance = None
 def get_ai_agents():
     """Get the AI agents instance"""
     return _ai_agents_instance
+
+# AI Website Discovery Endpoints
+@app.post("/ai/discover-websites", tags=["AI Discovery"])
+@limiter.limit("5/hour")
+async def discover_websites(
+    request: Request,
+    search_terms: List[str] = Body(None, description="Search terms for website discovery"),
+    current_user: Dict = Depends(get_current_user_optional)
+):
+    """AI-powered discovery of Iranian e-commerce websites"""
+    try:
+        from ai_website_discovery import AIWebsiteDiscovery
+
+        discovery_service = AIWebsiteDiscovery()
+        await discovery_service.initialize()
+
+        try:
+            result = await discovery_service.discover_websites(search_terms)
+
+            return {
+                "message": f"AI discovery completed! Found {len(result.candidates)} potential websites.",
+                "candidates": [
+                    {
+                        "domain": candidate.domain,
+                        "name": candidate.name,
+                        "url": candidate.url,
+                        "category": candidate.category,
+                        "confidence_score": candidate.confidence_score,
+                        "indicators": candidate.indicators
+                    }
+                    for candidate in result.candidates[:20]  # Return top 20
+                ],
+                "stats": {
+                    "total_candidates": len(result.candidates),
+                    "searched_sources": len(result.searched_sources),
+                    "processing_time": result.processing_time
+                }
+            }
+
+        finally:
+            await discovery_service.close()
+
+    except Exception as e:
+        logger.error(f"❌ AI website discovery failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"AI discovery failed: {str(e)}")
+
+@app.get("/ai/website-suggestions", tags=["AI Discovery"])
+@limiter.limit("20/hour")
+async def get_website_suggestions(
+    request: Request,
+    min_score: float = Query(0.7, description="Minimum confidence score (0-1)"),
+    current_user: Dict = Depends(get_current_user_optional)
+):
+    """Get AI-suggested websites for monitoring"""
+    try:
+        from ai_website_discovery import AIWebsiteDiscovery
+
+        discovery_service = AIWebsiteDiscovery()
+        await discovery_service.initialize()
+
+        try:
+            suggestions = await discovery_service.suggest_websites_for_monitoring(min_score)
+
+            return {
+                "message": f"Found {len(suggestions)} website suggestions with score ≥ {min_score}",
+                "suggestions": [
+                    {
+                        "domain": suggestion.domain,
+                        "name": suggestion.name,
+                        "url": suggestion.url,
+                        "category": suggestion.category,
+                        "confidence_score": suggestion.confidence_score,
+                        "discovered_at": suggestion.discovered_at,
+                        "indicators": suggestion.indicators
+                    }
+                    for suggestion in suggestions
+                ]
+            }
+
+        finally:
+            await discovery_service.close()
+
+    except Exception as e:
+        logger.error(f"❌ Getting website suggestions failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Getting suggestions failed: {str(e)}")
+
+@app.post("/ai/add-discovered-website", tags=["AI Discovery"])
+@limiter.limit("10/hour")
+async def add_discovered_website(
+    request: Request,
+    website_data: dict = Body(...),
+    current_user: Dict = Depends(get_current_user_optional)
+):
+    """Add an AI-discovered website to monitoring"""
+    try:
+        # Generate website ID
+        website_id = f"AI{int(time.time())}"
+
+        # Add AI discovery metadata
+        website_data['id'] = website_id
+        website_data['status'] = 'active'
+        website_data['added_by'] = 'ai_discovery'
+        website_data['lastScraped'] = datetime.now(timezone.utc).isoformat()
+        website_data['productsFound'] = 0
+        website_data['priceChanges'] = 0
+        website_data['successRate'] = 100
+        website_data['nextScrape'] = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+
+        logger.info(f"✅ AI-discovered website added: {website_data.get('name', website_data.get('domain', 'unknown'))}")
+
+        return {
+            "website_id": website_id,
+            "message": "AI-discovered website added successfully for monitoring!",
+            "website": website_data
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Adding discovered website failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Adding website failed: {str(e)}")
+
+@app.get("/ai/discovery-history", tags=["AI Discovery"])
+@limiter.limit("20/hour")
+async def get_discovery_history(
+    request: Request,
+    limit: int = Query(10, description="Number of recent discoveries to return"),
+    current_user: Dict = Depends(get_current_user_optional)
+):
+    """Get history of AI website discoveries"""
+    try:
+        from ai_website_discovery import AIWebsiteDiscovery
+
+        discovery_service = AIWebsiteDiscovery()
+        await discovery_service.initialize()
+
+        try:
+            history = await discovery_service.get_discovery_history(limit)
+
+            return {
+                "message": f"Retrieved {len(history)} discovery sessions",
+                "history": history
+            }
+
+        finally:
+            await discovery_service.close()
+
+    except Exception as e:
+        logger.error(f"❌ Getting discovery history failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Getting history failed: {str(e)}")
 
 # Analytics endpoint to provide real dashboard data
 @app.get("/analytics/dashboard", tags=["Analytics"])
