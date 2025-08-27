@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     NEO4J_USER: str = Field(default="neo4j", env="NEO4J_USER")
     NEO4J_PASSWORD: str = Field(default="iranian_price_secure_2025", env="NEO4J_PASSWORD")
     
-    REDIS_URL: str = Field(default="redis://:iranian_redis_secure_2025@redis:6379", env="REDIS_URL")
+    REDIS_URL: str = Field(default="redis://:iranian_redis_secure_2025@redis:6379/1", env="REDIS_URL")
     
     POSTGRES_URL: str = Field(
         default="postgresql://price_admin:iranian_postgres_secure_2025@postgres:5432/iranian_price_users",

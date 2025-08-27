@@ -2,20 +2,30 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y gcc curl && rm -rf /var/lib/apt/lists/*
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    curl \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
 
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-RUN mkdir -p /app/services/api
-WORKDIR /app/services/api
+# Copy application code
+COPY services/api/ ./services/api/
+COPY services/base.py ./services/
+COPY services/__init__.py ./services/
+COPY config/ ./config/
 
-COPY services/api/ .
+# Create logs directory
 RUN mkdir -p /app/logs
 
-EXPOSE 8000
+WORKDIR /app/services/api
 
+# Health check using wget (more reliable in containers)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8000/health || exit 1
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

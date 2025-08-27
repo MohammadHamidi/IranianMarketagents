@@ -1,0 +1,190 @@
+
+services:
+  # Database Services
+  neo4j:
+    image: neo4j:5.15-community
+    container_name: iranian-price-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/iranian_price_secure_2025
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_dbms_security_procedures_allowlist: apoc.*
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    networks:
+      - iranian-price-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    container_name: iranian-price-redis
+    command: redis-server --requirepass iranian_redis_secure_2025
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - iranian-price-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "iranian_redis_secure_2025", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: iranian-price-postgres
+    environment:
+      POSTGRES_DB: iranian_price_users
+      POSTGRES_USER: price_admin
+      POSTGRES_PASSWORD: iranian_postgres_secure_2025
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_postgres.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - iranian-price-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U price_admin -d iranian_price_users"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Application Services
+  api-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: iranian-price-api
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=iranian_price_secure_2025
+      - REDIS_URL=redis://:iranian_redis_secure_2025@redis:6379/1
+      - POSTGRES_URL=postgresql://price_admin:iranian_postgres_secure_2025@postgres:5432/iranian_price_users
+      - JWT_SECRET=iranian_price_jwt_secret_2025_change_in_production
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:8080
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - iranian-price-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  scraper-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.scraper
+    container_name: iranian-price-scraper
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=iranian_price_secure_2025
+      - REDIS_URL=redis://:iranian_redis_secure_2025@redis:6379/1
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - iranian-price-network
+    restart: unless-stopped
+
+  matcher-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.matcher
+    container_name: iranian-price-matcher
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=iranian_price_secure_2025
+      - REDIS_URL=redis://:iranian_redis_secure_2025@redis:6379/2
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - iranian-price-network
+    restart: unless-stopped
+
+  pipeline-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.pipeline
+    container_name: iranian-price-pipeline
+    depends_on:
+      api-service:
+        condition: service_healthy
+      scraper-service:
+        condition: service_started
+      matcher-service:
+        condition: service_started
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=iranian_price_secure_2025
+      - REDIS_URL=redis://:iranian_redis_secure_2025@redis:6379/3
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=587
+      - ADMIN_EMAIL=admin@iranianprice.local
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - iranian-price-network
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: ./services/dashboard
+      dockerfile: Dockerfile
+      args:
+        - REACT_APP_API_URL=http://localhost:8000
+        - REACT_APP_ENVIRONMENT=development
+    container_name: iranian-price-dashboard
+    depends_on:
+      api-service:
+        condition: service_healthy
+    ports:
+      - "3000:80"
+    networks:
+      - iranian-price-network
+    restart: unless-stopped
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  redis_data:
+  postgres_data:
+
+networks:
+  iranian-price-network:
+    driver: bridge

@@ -14,7 +14,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY services/matcher/ ./services/matcher/
+COPY services/pipeline/ ./services/pipeline/
 COPY services/base.py ./services/
 COPY services/__init__.py ./services/
 COPY config/ ./config/
@@ -22,6 +22,6 @@ COPY config/ ./config/
 # Create logs directory
 RUN mkdir -p /app/logs
 
-WORKDIR /app/services/matcher
+WORKDIR /app/services/pipeline
 
 CMD ["python", "main.py"]

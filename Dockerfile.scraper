@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies with modern Chrome installation
+# Install system dependencies including Chrome
 RUN apt-get update && apt-get install -y \
     gcc curl wget gnupg unzip \
     fonts-liberation libnss3 libnspr4 \
@@ -13,31 +13,41 @@ RUN apt-get update && apt-get install -y \
     ca-certificates xvfb \
     && rm -rf /var/lib/apt/lists/*
 
-# Modern Chrome installation (fixes apt-key issue)
-RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/google-chrome-keyring.gpg] https://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
+# Install Chrome
+RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
     && apt-get update \
     && apt-get install -y google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
 
 # Install ChromeDriver
 RUN CHROME_DRIVER_VERSION=$(curl -sS chromedriver.storage.googleapis.com/LATEST_RELEASE) \
-    && wget -N https://chromedriver.storage.googleapis.com/$CHROME_DRIVER_VERSION/chromedriver_linux64.zip -P /tmp/ \
-    && unzip /tmp/chromedriver_linux64.zip -d /tmp/ \
+    && wget -O /tmp/chromedriver.zip http://chromedriver.storage.googleapis.com/$CHROME_DRIVER_VERSION/chromedriver_linux64.zip \
+    && unzip /tmp/chromedriver.zip -d /tmp/ \
     && mv /tmp/chromedriver /usr/local/bin/chromedriver \
-    && chmod +x /usr/local/bin/chromedriver
+    && chmod +x /usr/local/bin/chromedriver \
+    && rm /tmp/chromedriver.zip
 
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-RUN mkdir -p /app/services/scraper
-WORKDIR /app/services/scraper
+# Copy application code
+COPY services/scraper/ ./services/scraper/
+COPY services/enhanced_scraper_service.py ./services/
+COPY services/search_service.py ./services/
+COPY services/base.py ./services/
+COPY services/__init__.py ./services/
+COPY config/ ./config/
 
-COPY services/scraper/ .
-RUN mkdir -p /app/logs
-
+# Set environment variables for Chrome
 ENV CHROME_BIN=/usr/bin/google-chrome
 ENV CHROMEDRIVER_PATH=/usr/local/bin/chromedriver
 ENV DISPLAY=:99
+
+# Create logs directory
+RUN mkdir -p /app/logs
+
+WORKDIR /app/services/scraper
 
 CMD ["python", "main.py"]

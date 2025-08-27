@@ -1,10 +1,11 @@
+# Build stage
 FROM node:18-alpine as builder
 
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
-RUN npm install
+RUN npm install --omit=dev
 
 # Copy source code
 COPY . .
@@ -23,8 +24,21 @@ FROM nginx:alpine
 # Copy built files
 COPY --from=builder /app/build /usr/share/nginx/html
 
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Create nginx configuration
+RUN echo 'server {' > /etc/nginx/conf.d/default.conf && \
+    echo '    listen 80;' >> /etc/nginx/conf.d/default.conf && \
+    echo '    server_name localhost;' >> /etc/nginx/conf.d/default.conf && \
+    echo '    root /usr/share/nginx/html;' >> /etc/nginx/conf.d/default.conf && \
+    echo '    index index.html;' >> /etc/nginx/conf.d/default.conf && \
+    echo '    location / {' >> /etc/nginx/conf.d/default.conf && \
+    echo '        try_files $uri $uri/ /index.html;' >> /etc/nginx/conf.d/default.conf && \
+    echo '    }' >> /etc/nginx/conf.d/default.conf && \
+    echo '    location /api/ {' >> /etc/nginx/conf.d/default.conf && \
+    echo '        proxy_pass http://iranian-price-api:8000/;' >> /etc/nginx/conf.d/default.conf && \
+    echo '        proxy_set_header Host $host;' >> /etc/nginx/conf.d/default.conf && \
+    echo '        proxy_set_header X-Real-IP $remote_addr;' >> /etc/nginx/conf.d/default.conf && \
+    echo '    }' >> /etc/nginx/conf.d/default.conf && \
+    echo '}' >> /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 
