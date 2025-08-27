@@ -1,7 +1,13 @@
 from fastapi import APIRouter, HTTPException
-from services.enhanced_scraper_service import EnhancedScraperService
-from services.search_service import SearXNGSearchService
 import asyncio
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
+# Updated imports
+from scraper.orchestrator import IranianScrapingOrchestrator
+from scraper.search_service import SearXNGSearchService
+from services.enhanced_scraper_service import EnhancedScraperService
 
 router = APIRouter()
 

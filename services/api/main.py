@@ -9,6 +9,7 @@ import json
 import logging
 import time
 import hashlib
+import random
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any, Union
 from contextlib import asynccontextmanager
@@ -21,8 +22,8 @@ from fastapi import FastAPI, HTTPException, Depends, Request, Query, Path, Body
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, validator
+from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel, Field
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -67,10 +68,10 @@ security = HTTPBearer()
 
 # Pydantic Models
 class UserCreate(BaseModel):
-    email: str = Field(..., regex=r'^[^@]+@[^@]+\.[^@]+$')
+    email: str = Field(..., pattern=r'^[^@]+@[^@]+\.[^@]+')
     password: str = Field(..., min_length=8)
     company: Optional[str] = None
-    api_tier: str = Field(default='basic', regex='^(basic|premium|enterprise)$')
+    api_tier: str = Field(default='basic', pattern='^(basic|premium|enterprise)')
 
 class UserLogin(BaseModel):
     email: str
@@ -662,7 +663,6 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 if __name__ == "__main__":
     import uvicorn
-    import random
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
