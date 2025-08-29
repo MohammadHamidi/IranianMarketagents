@@ -14,8 +14,8 @@ import redis.asyncio as redis
 from neo4j import GraphDatabase
 import aiohttp
 import smtplib
-from email.mime.text import MimeText
-from email.mime.multipart import MimeMultipart
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

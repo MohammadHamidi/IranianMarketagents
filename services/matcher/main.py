@@ -11,7 +11,7 @@ import os
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 import redis.asyncio as redis
-from matcher import ProductMatcher
+from .matcher import ProductMatcher
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

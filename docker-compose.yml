@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   # Database Services
   neo4j:
@@ -91,6 +93,7 @@ services:
       - "8000:8000"
     volumes:
       - ./logs:/app/logs
+      - ./services/api:/app/services/api # Mount source code for development
     networks:
       - iranian-price-network
     healthcheck:
@@ -181,6 +184,8 @@ services:
     depends_on:
       api-service:
         condition: service_healthy
+    environment:
+      - REACT_APP_API_URL=/api
     ports:
       - "3000:80"
     networks:

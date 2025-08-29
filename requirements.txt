@@ -18,6 +18,7 @@ selenium==4.15.2
 beautifulsoup4==4.12.2
 requests==2.31.0
 undetected-chromedriver==3.5.5
+webdriver-manager==4.0.1
 
 # Persian Text Processing
 parsivar==0.2.3.1
@@ -50,3 +51,4 @@ pytest-asyncio==0.21.1
 # Additional utilities
 aiofiles==23.2.1
 croniter==1.4.1
+psutil==5.9.0

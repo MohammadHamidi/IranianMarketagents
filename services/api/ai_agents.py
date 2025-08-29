@@ -25,11 +25,15 @@ class IranianAIAgents:
     async def initialize(self, redis_client=None):
         """Initialize AI agents with OpenAI client"""
         try:
+            # Initialize OpenAI client with minimal configuration
             self.client = AsyncOpenAI(
                 api_key="aa-YIPbj89u8uirQf0qphftKv5Te7xDG08DQPrYnlaA2bAP1Dk3",
                 base_url="https://api.avalai.ir/v1"
             )
             self.redis_client = redis_client
+
+            # Test the client connection
+            await self.client.models.list()
 
             # Initialize specialized agents
             await self._initialize_product_discovery_agent()
@@ -41,7 +45,9 @@ class IranianAIAgents:
 
         except Exception as e:
             logger.error(f"Failed to initialize AI agents: {e}")
-            raise
+            # Don't raise the exception, just disable AI features
+            self.client = None
+            self.agents = {}
 
     async def _initialize_product_discovery_agent(self):
         """Initialize Product Discovery Agent"""

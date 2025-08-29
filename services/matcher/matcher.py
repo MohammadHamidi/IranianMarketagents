@@ -15,7 +15,7 @@ from difflib import SequenceMatcher
 from neo4j import GraphDatabase
 import redis
 from fuzzywuzzy import fuzz, process
-import hazm  # Persian text processing
+# import hazm  # Persian text processing - commented out due to compatibility issues
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np

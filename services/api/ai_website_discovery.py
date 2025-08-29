@@ -424,5 +424,4 @@ class AIWebsiteDiscovery:
 
         except Exception as e:
             logger.error(f"Error getting website suggestions: {e}")
-            return []</contents>
-</xai:function_call
+            return []

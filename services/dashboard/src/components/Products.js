@@ -7,10 +7,7 @@ import {
     Space,
     Tag,
     Modal,
-    Form,
-    Select,
     message,
-    Popconfirm,
     Tooltip,
     Row,
     Col,
@@ -20,9 +17,6 @@ import {
 } from 'antd';
 import {
     SearchOutlined,
-    PlusOutlined,
-    EditOutlined,
-    DeleteOutlined,
     EyeOutlined,
     LinkOutlined,
     ReloadOutlined,
@@ -31,15 +25,10 @@ import {
 } from '@ant-design/icons';
 import { api, productsAPI, checkAPIHealth, mockData } from '../services/api';
 
-const { Option } = Select;
-
 const Products = () => {
     const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(false);
     const [searchText, setSearchText] = useState('');
-    const [isModalVisible, setIsModalVisible] = useState(false);
-    const [editingProduct, setEditingProduct] = useState(null);
-    const [form] = Form.useForm();
     const [stats, setStats] = useState({
         totalProducts: 0,
         activeProducts: 0,
@@ -180,57 +169,7 @@ const Products = () => {
         }
     };
 
-    // Add new product
-    const handleAddProduct = async (values) => {
-        try {
-            if (apiAvailable) {
-                await productsAPI.addProduct(values);
-            } else {
-                // Simulate adding product to mock data
-                const newProduct = {
-                    product_id: `PROD${Date.now()}`,
-                    canonical_title: values.canonical_title,
-                    canonical_title_fa: values.canonical_title_fa,
-                    brand: values.brand,
-                    category: values.category,
-                    current_prices: [],
-                    lowest_price: null,
-                    highest_price: null,
-                    price_range_pct: 0,
-                    available_vendors: 0,
-                    last_updated: new Date().toISOString()
-                };
-                mockData.products.push(newProduct);
-            }
-            message.success('Product added successfully!');
-            setIsModalVisible(false);
-            form.resetFields();
-            fetchProducts(); // Refresh the list
-        } catch (error) {
-            message.error('Failed to add product');
-            console.error('Error adding product:', error);
-        }
-    };
-
-    // Delete product
-    const handleDeleteProduct = async (productId) => {
-        try {
-            if (apiAvailable) {
-                await productsAPI.deleteProduct(productId);
-            } else {
-                // Simulate deleting product from mock data
-                const index = mockData.products.findIndex(p => p.product_id === productId);
-                if (index > -1) {
-                    mockData.products.splice(index, 1);
-                }
-            }
-            message.success('Product deleted successfully!');
-            fetchProducts(); // Refresh the list
-        } catch (error) {
-            message.error('Failed to delete product');
-            console.error('Error deleting product:', error);
-        }
-    };
+    // Note: Product management functions removed - this is now a monitoring-only dashboard
 
     // Refresh prices
     const handleRefreshPrices = async (productId) => {
@@ -416,32 +355,19 @@ const Products = () => {
                             onClick={() => handleRefreshPrices(record.product_id)}
                         />
                     </Tooltip>
-                    <Tooltip title="Edit Product">
+                    <Tooltip title="Visit Store">
                         <Button
                             type="text"
-                            icon={<EditOutlined />}
+                            icon={<LinkOutlined />}
                             size="small"
                             onClick={() => {
-                                setEditingProduct(record);
-                                setIsModalVisible(true);
+                                const storeUrl = record.current_prices?.[0]?.vendor;
+                                if (storeUrl) {
+                                    window.open(`https://${storeUrl}`, '_blank');
+                                }
                             }}
                         />
                     </Tooltip>
-                    <Popconfirm
-                        title="Are you sure you want to delete this product?"
-                        onConfirm={() => handleDeleteProduct(record.product_id)}
-                        okText="Yes"
-                        cancelText="No"
-                    >
-                        <Tooltip title="Delete Product">
-                            <Button
-                                type="text"
-                                danger
-                                icon={<DeleteOutlined />}
-                                size="small"
-                            />
-                        </Tooltip>
-                    </Popconfirm>
                 </Space>
             ),
         },
@@ -454,7 +380,7 @@ const Products = () => {
                 <Col span={8}>
                     <Card>
                         <Statistic
-                            title="Total Products"
+                            title="🔍 Discovered Products"
                             value={stats.totalProducts}
                             prefix={<ShoppingOutlined />}
                             valueStyle={{ color: '#1890ff' }}
@@ -464,7 +390,7 @@ const Products = () => {
                 <Col span={8}>
                     <Card>
                         <Statistic
-                            title="Active Products"
+                            title="📊 Available Prices"
                             value={stats.activeProducts}
                             prefix={<ShoppingOutlined />}
                             valueStyle={{ color: '#52c41a' }}
@@ -474,7 +400,7 @@ const Products = () => {
                 <Col span={8}>
                     <Card>
                         <Statistic
-                            title="Total Value"
+                            title="💰 Market Value Tracked"
                             value={stats.totalValue.toLocaleString()}
                             prefix={<DollarOutlined />}
                             suffix="تومان"
@@ -485,18 +411,13 @@ const Products = () => {
             </Row>
 
             <Card
-                title="Products Management"
+                title="🤖 Discovered Products (Auto-Scraped)"
                 extra={
-                    <Button
-                        type="primary"
-                        icon={<PlusOutlined />}
-                        onClick={() => {
-                            setEditingProduct(null);
-                            setIsModalVisible(true);
-                        }}
-                    >
-                        Add New Product
-                    </Button>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '12px', color: '#666' }}>
+                            📡 Live data from Iranian e-commerce sites
+                        </span>
+                    </div>
                 }
             >
                 <Space style={{ marginBottom: 16 }}>
@@ -521,7 +442,7 @@ const Products = () => {
                         loading={aiDiscoveryLoading}
                         style={{ backgroundColor: '#722ed1', borderColor: '#722ed1' }}
                     >
-                        🔍 AI Discover Websites
+                        🔍 AI Discover New Sites
                     </Button>
                 </Space>
 
@@ -545,12 +466,14 @@ const Products = () => {
                         <div>
                             {dataStatus.real_data_flag ? (
                                 <div>
-                                    Showing live data from {dataStatus.product_count} products across {dataStatus.scraping_summary?.vendors ? JSON.parse(dataStatus.scraping_summary.vendors).length : 0} vendors.
+                                    🤖 <strong>Auto-Discovery Active:</strong> Found {dataStatus.product_count} products across {dataStatus.scraping_summary?.vendors ? JSON.parse(dataStatus.scraping_summary.vendors).length : 0} Iranian e-commerce sites.
                                     <br />
-                                    Last updated: {dataStatus.scraping_summary?.last_updated ? new Date(dataStatus.scraping_summary.last_updated).toLocaleString() : 'Unknown'}
+                                    📅 Last crawl: {dataStatus.scraping_summary?.last_updated ? new Date(dataStatus.scraping_summary.last_updated).toLocaleString() : 'Unknown'}
+                                    <br />
+                                    📡 Next crawl scheduled in 15 minutes (automatic)
                                 </div>
                             ) : (
-                                "No real scraped data available. Run the scraper to see live data."
+                                "🔍 Waiting for scraper to start discovering products from Iranian e-commerce sites..."
                             )}
                         </div>
                     }
@@ -574,101 +497,18 @@ const Products = () => {
                 />
             </Card>
 
-            {/* Add/Edit Product Modal */}
-            <Modal
-                title={editingProduct ? "Edit Product" : "Add New Product"}
-                open={isModalVisible}
-                onCancel={() => {
-                    setIsModalVisible(false);
-                    setEditingProduct(null);
-                    form.resetFields();
-                }}
-                footer={null}
-                width={600}
-            >
-                <Form
-                    form={form}
-                    layout="vertical"
-                    onFinish={handleAddProduct}
-                    initialValues={editingProduct || {}}
-                >
-                    <Row gutter={16}>
-                        <Col span={12}>
-                            <Form.Item
-                                name="canonical_title"
-                                label="Product Name (English)"
-                                rules={[{ required: true, message: 'Please enter product name!' }]}
-                            >
-                                <Input placeholder="e.g., Samsung Galaxy S21" />
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item
-                                name="canonical_title_fa"
-                                label="Product Name (Persian)"
-                                rules={[{ required: true, message: 'Please enter Persian name!' }]}
-                            >
-                                <Input placeholder="e.g., سامسونگ گلکسی اس ۲۱" />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <Row gutter={16}>
-                        <Col span={12}>
-                            <Form.Item
-                                name="brand"
-                                label="Brand"
-                                rules={[{ required: true, message: 'Please select brand!' }]}
-                            >
-                                <Select placeholder="Select brand">
-                                    <Option value="Samsung">Samsung</Option>
-                                    <Option value="Apple">Apple</Option>
-                                    <Option value="Xiaomi">Xiaomi</Option>
-                                    <Option value="Huawei">Huawei</Option>
-                                    <Option value="Other">Other</Option>
-                                </Select>
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item
-                                name="category"
-                                label="Category"
-                                rules={[{ required: true, message: 'Please select category!' }]}
-                            >
-                                <Select placeholder="Select category">
-                                    <Option value="mobile">Mobile</Option>
-                                    <Option value="laptop">Laptop</Option>
-                                    <Option value="tablet">Tablet</Option>
-                                    <Option value="accessories">Accessories</Option>
-                                </Select>
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <Form.Item
-                        name="product_url"
-                        label="Product URL"
-                        rules={[{ required: true, message: 'Please enter product URL!' }]}
-                    >
-                        <Input placeholder="https://digikala.com/product/..." />
-                    </Form.Item>
-
-                    <Form.Item>
-                        <Space>
-                            <Button type="primary" htmlType="submit">
-                                {editingProduct ? 'Update Product' : 'Add Product'}
-                            </Button>
-                            <Button onClick={() => {
-                                setIsModalVisible(false);
-                                setEditingProduct(null);
-                                form.resetFields();
-                            }}>
-                                Cancel
-                            </Button>
-                        </Space>
-                    </Form.Item>
-                </Form>
-            </Modal>
+            {/* Product information note */}
+            <div style={{
+                marginTop: '16px',
+                padding: '12px',
+                background: '#f6f8fa',
+                borderRadius: '6px',
+                fontSize: '12px',
+                color: '#666'
+            }}>
+                💡 <strong>Note:</strong> All products are automatically discovered by our AI crawlers from Iranian e-commerce sites.
+                No manual product management needed - the system continuously finds and tracks new products and prices.
+            </div>
 
             {/* Product Details Modal */}
             <Modal
